@@ -30,6 +30,7 @@ const AddressTypes = {
 
   read: function(buffer, offset) {
     if(buffer[offset] == AddressTypes.IPv4) {
+      // read 4 sequence bytes
       return buffer[offset + 1] + "." +
              buffer[offset + 2] + "." +
              buffer[offset + 3] + "." +
@@ -41,7 +42,7 @@ const AddressTypes = {
         buffer[ offset + 2 + buffer[offset+1] ]
       )
     } else if(buffer[offset] == AddressTypes.IPv6){
-      return buffer.slice(buffer[offset+1], buffer[offset+1+16])
+      return buffer.slice(buffer[offset + 1], buffer[offset + 1 + 16 ])
     }
   },
 
@@ -75,6 +76,9 @@ function acceptConnection(socket) {
 
   const handshake = function(chunk) {
 
+    /**
+     * request {version, auth_method_count, auth_method[0]...  auth_method[n] }
+     */ 
     socket.removeListener('data', handshake)
     //SOCKS Version
     if(chunk[0] != 5) {
@@ -91,24 +95,39 @@ function acceptConnection(socket) {
 
     const resp = new Buffer(2)
     resp[0] = 0x05
-    if (socket.methods.indexOf(AuthMethods.USERPASS)) {
+
+    if (socket.methods.indexOf(AuthMethods.USERPASS) != -1) {
 
       socket.authUSERPASS = authUSERPASS.bind(socket)
       socket.on('data', socket.authUSERPASS)
 
       socket.pstate = States.VERIFYING
       resp[1] = AuthMethods.USERPASS
+      /**
+       * step 1
+       * responds a buffer with 2 length
+       * frame = { version, auth_accepted_method }
+       */
       socket.write(resp)
     } else {
       resp[1] = 0xFF
       socket.end(resp)
     }
   }
+
+
   socket.on('data', handshake)
 }
 
 function authUSERPASS(chunk) {
 
+  /**
+   * request {
+   *  subnegotiation_version , 
+   *  username_lenght, username,
+   *  password_lenght, password
+   * }
+   */ 
   console.log("auth step")
 
   // this here is is socket
@@ -124,7 +143,7 @@ function authUSERPASS(chunk) {
     nameLength = chunk[1]
     username = chunk.toString('utf8', 2, 2 + nameLength)
   
-    passLength = chunk[2+nameLength]
+    passLength = chunk[ 2 + nameLength ]
     password = chunk.toString('utf8', 3 + nameLength, 3 + nameLength + passLength)
     //console.log('Authorizing: '+username)
     
@@ -132,7 +151,11 @@ function authUSERPASS(chunk) {
       this.pstate = States.READY
       this.handleRequest = handleRequest.bind(this)
       this.on('data', this.handleRequest)
+      // success
       resp[1] = 0x00
+      /**
+       * frame = { subnegotiation_version, auth_status }
+       */
       this.write(resp)
       //console.log('Accepted');
     } else {
@@ -151,6 +174,11 @@ function authorize(username,password) {
 }
 
 function handleRequest(chunk) {
+
+  /**
+   * request = { version, command, reserved, address_type, dst, port }
+   * address_type: is about if address is IPV4, IPV6 or DomainName
+   */
   console.log("handle request")
   // this here is is Socket
   this.removeListener('data', this.handleRequest)
@@ -167,7 +195,7 @@ function handleRequest(chunk) {
   
     const port = chunk.readUInt16BE(offset)
     //console.log('Request', chunk[1], " to: "+ address+":"+port);
-  
+    // this example only works on TCP
     if(chunk[1] == CommandType.TCPConnect) {
       this.request = chunk
 
@@ -175,7 +203,7 @@ function handleRequest(chunk) {
        * net.createConnection(port[, host][, connectListener])
        * create a connection with destin (target)
        */
-      this.proxy =  net.createConnection(port, address, initProxy.bind(this))
+      this.proxy = net.createConnection(port, address, initProxy.bind(this))
     } else {
       this.end(chunk)
     }
@@ -185,8 +213,15 @@ function handleRequest(chunk) {
 function initProxy() {
 
   console.log("init proxy")
+
+  /**
+   * response = { version, results, reserved, address_type, dst, port }
+   * 
+   *  1) response will be with same lenght
+   *  2) with copy contents to resp
+   *  3) but with 2rd position have a status of connection
+   */
   const resp = new Buffer(this.request.length)
-  // this is socket with clientthis
   this.request.copy(resp)
   resp[1] = 0x00
 
