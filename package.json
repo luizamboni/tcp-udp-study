@@ -9,5 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "amqplib": "^0.5.3",
+    "bitsyntax": "^0.1.0"
   }
 }
